@@ -37,66 +37,79 @@ export function errorAction(code) {
 export class RecognitionLoop {
   constructor({ create, onResult, onError, onListening, onWaiting = () => {}, schedule = (fn, delay) => setTimeout(fn, delay), cancel = timer => clearTimeout(timer) }) {
     Object.assign(this, { create, onResult, onError, onListening, onWaiting, schedule, cancel });
-    this.active = false; this.listening = false; this.session = null; this.timer = null; this.finalizeTimer = null; this.failures = 0;
+    this.active = false; this.listening = false; this.session = null;
+    this.timer = null; this.finalizeTimer = null; this.recoveryTimer = null; this.failures = 0;
   }
   start() { if (this.active) return; this.active = true; this.failures = 0; this.open(); }
   clearFinalizeTimer() {
     if (this.finalizeTimer !== null) this.cancel(this.finalizeTimer);
     this.finalizeTimer = null;
   }
+  clearSessionTimers() {
+    this.clearFinalizeTimer();
+    if (this.recoveryTimer !== null) this.cancel(this.recoveryTimer);
+    this.recoveryTimer = null;
+  }
   open() {
     if (!this.active) return;
     const recognition = this.create();
     this.session = recognition;
     let finalizing = false;
-    recognition.onstart = () => {
-      if (this.session === recognition && this.active) { this.listening = true; this.onListening(); }
-    };
-    recognition.onresult = event => {
-      if (this.session !== recognition || !this.active) return;
-      this.clearFinalizeTimer();
-      this.failures = 0; this.onResult(event);
-      // Chrome may hold an isolated word as interim indefinitely in continuous mode.
-      // stop() asks for a final result; abort() would discard the pending speech.
-      const pending = Array.from(event.results).some(result => !result.isFinal && result[0]?.transcript?.trim());
-      if (pending && !finalizing && this.active && this.session === recognition) {
-        this.finalizeTimer = this.schedule(() => {
-          this.finalizeTimer = null;
-          if (!this.active || this.session !== recognition) return;
-          finalizing = true;
-          this.listening = false;
-          this.onWaiting();
-          try { recognition.stop(); }
-          catch { this.onError('start-failed', true); this.stop(); }
-        }, 650);
-      }
-    };
-    recognition.onerror = event => {
-      if (this.session !== recognition || !this.active) return;
-      this.clearFinalizeTimer();
-      this.failures++;
-      const terminal = errorAction(event.error) === 'stop' || this.failures >= 5;
-      this.onError(event.error, terminal);
-      if (terminal) this.stop();
-    };
-    recognition.onend = () => {
+    const current = () => this.session === recognition && this.active;
+    const ended = () => {
       if (this.session !== recognition) return;
-      this.clearFinalizeTimer();
-      this.session = null;
-      this.listening = false;
+      this.clearSessionTimers();
+      this.session = null; this.listening = false;
       if (this.active) {
-        this.onWaiting();
+        if (!this.failures) this.onWaiting();
         const delay = this.failures ? Math.min(300 * 2 ** this.failures, 4000) : 0;
         this.timer = this.schedule(() => { this.timer = null; this.open(); }, delay);
       }
     };
-    try { recognition.start(); }
+    const finish = () => {
+      if (!current() || finalizing) return;
+      finalizing = true; this.listening = false; this.clearFinalizeTimer(); this.onWaiting();
+      // A browser can fail to emit end after stop. Recover just as a manual
+      // Stop/Start would, but invalidate callbacks before aborting the old session.
+      this.recoveryTimer = this.schedule(() => {
+        this.recoveryTimer = null;
+        if (!current()) return;
+        ended();
+        try { recognition.abort(); } catch {}
+      }, 1200);
+      try { recognition.stop(); }
+      catch { ended(); try { recognition.abort(); } catch {} }
+    };
+    const arm = delay => {
+      this.clearFinalizeTimer();
+      if (current() && !finalizing) this.finalizeTimer = this.schedule(() => {
+        this.finalizeTimer = null; finish();
+      }, delay);
+    };
+    recognition.onstart = () => {
+      if (current()) { this.listening = true; this.onListening(); arm(5000); }
+    };
+    recognition.onresult = event => {
+      if (!current()) return;
+      this.failures = 0; this.onResult(event);
+      // Let native single-utterance endpointing confirm rapid speech first.
+      // This timer is a recovery fallback, not the normal word boundary.
+      const pending = Array.from(event.results).some(result => !result.isFinal && result[0]?.transcript?.trim());
+      arm(pending ? 1800 : 5000);
+    };
+    recognition.onerror = event => {
+      if (!current()) return;
+      this.failures++;
+      const terminal = errorAction(event.error) === 'stop' || this.failures >= 5;
+      this.onError(event.error, terminal);
+      if (terminal) this.stop(); else finish();
+    };
+    recognition.onend = ended;
+    try { recognition.start(); arm(5000); }
     catch { this.onError('start-failed', true); this.stop(); }
   }
   stop() {
-    this.active = false;
-    this.listening = false;
-    this.clearFinalizeTimer();
+    this.active = false; this.listening = false; this.clearSessionTimers();
     if (this.timer !== null) this.cancel(this.timer);
     this.timer = null;
     const session = this.session; this.session = null;

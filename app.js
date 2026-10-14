@@ -1,4 +1,4 @@
-import { Practice, RecognitionLoop } from './practice.js?v=4';
+import { Practice, RecognitionLoop } from './practice.js?v=5';
 const vocabulary = [ ['go','To move or travel somewhere.'], ['come','To move toward someone or somewhere.'], ['make','To create or prepare something.'], ['take','To pick up or carry something.'], ['give','To offer something to someone.'] ];
 const $ = id => document.getElementById(id);
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -28,7 +28,7 @@ const loop = new RecognitionLoop({
   create() {
     practice.newSession();
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US'; recognition.continuous = true; recognition.interimResults = true; recognition.maxAlternatives = 1;
+    recognition.lang = 'en-US'; recognition.continuous = false; recognition.interimResults = true; recognition.maxAlternatives = 1;
     return recognition;
   },
   onListening() { message('Listening… say the word, then pause.'); },
