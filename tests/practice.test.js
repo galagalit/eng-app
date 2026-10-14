@@ -43,3 +43,28 @@ test('error policy and synchronous start failure',()=>{
  assert.equal(errorAction('audio-capture'),'stop');assert.equal(errorAction('no-speech'),'retry');
  const f=fixture();f.loop.create=()=>({start(){throw Error('blocked');},abort(){}});f.loop.start();assert.equal(f.loop.active,false);assert.deepEqual(f.errors,[['start-failed',true]]);
 });
+test('an idle interim result requests finalization, counts final once, and restarts',()=>{
+ const f=fixture();const p=new Practice('go');p.start();f.loop.onResult=e=>p.consume(e);f.loop.start();
+ const s=f.sessions[0];let stopped=0;s.stop=()=>{stopped++;s.onresult(event([result('go')]));s.onresult(event([result('go')]));s.onend();};
+ s.onresult(event([result('go',false)]));assert.equal(p.count,0);assert.equal(f.timers.size,1);
+ f.tick();assert.equal(stopped,1);assert.equal(p.count,1);assert.equal(f.loop.active,true);
+ f.tick();assert.equal(f.sessions.length,2);
+});
+test('new interim updates postpone finalization and final results cancel it',()=>{
+ const f=fixture();f.loop.start();const s=f.sessions[0];let stopped=0;s.stop=()=>stopped++;
+ s.onresult(event([result('go',false)]));const first=[...f.timers.keys()][0];
+ s.onresult(event([result('go go',false)]));assert.equal(f.timers.has(first),false);assert.equal(f.timers.size,1);
+ s.onresult(event([result('go go')]));assert.equal(f.timers.size,0);f.tick();assert.equal(stopped,0);
+});
+test('user Stop and unexpected end cancel pending interim finalization',()=>{
+ for(const userStop of [true,false]){
+  const f=fixture();f.loop.start();const s=f.sessions[0];let stopped=0;s.stop=()=>stopped++;
+  s.onresult(event([result('go',false)]));if(userStop)f.loop.stop();else s.onend();
+  f.tick();assert.equal(stopped,0);assert.equal(f.sessions.length,userStop?1:2);
+ }
+});
+test('the displayed verb go is accepted as a final result',()=>{
+ const p=new Practice('go');p.start();
+ assert.deepEqual(p.consume(event([result('go')])),['correct']);assert.equal(p.count,1);
+ p.newSession();assert.deepEqual(p.consume(event([result('Go.')])),['correct']);assert.equal(p.count,2);
+});

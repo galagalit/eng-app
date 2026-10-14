@@ -1,4 +1,4 @@
-import { Practice, RecognitionLoop } from './practice.js';
+import { Practice, RecognitionLoop } from './practice.js?v=3';
 const vocabulary = [ ['go','To move or travel somewhere.'], ['come','To move toward someone or somewhere.'], ['make','To create or prepare something.'], ['take','To pick up or carry something.'], ['give','To offer something to someone.'] ];
 const $ = id => document.getElementById(id);
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -73,16 +73,21 @@ $('start').onclick = () => {
   practice.start(); message('Starting microphone…'); loop.start(); render();
 };
 $('stop').onclick = () => { practice.stop(); loop.stop(); message('Paused. Your progress is saved.'); render(); };
+function showWord() {
+  $('target').textContent = vocabulary[index][0];
+  $('meaning').textContent = vocabulary[index][1];
+  $('word-number').textContent = `WORD ${String(index+1).padStart(2,'0')} / ${String(vocabulary.length).padStart(2,'0')}`;
+}
 $('next').onclick = () => {
   loop.stop(); index = (index + 1) % vocabulary.length; practice = new Practice(vocabulary[index][0]);
-  $('target').textContent = vocabulary[index][0]; $('meaning').textContent = vocabulary[index][1];
-  $('word-number').textContent = `WORD ${String(index+1).padStart(2,'0')} / ${String(vocabulary.length).padStart(2,'0')}`;
+  showWord();
   $('celebration').hidden = true; $('heard').textContent = 'Your five wins start here.'; message('Ready when you are.'); render();
 };
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && practice.active) { practice.stop(); loop.stop(); message('Paused while this tab is in the background. Press Start Recording to resume.'); render(); }
 });
 window.addEventListener('pagehide', () => loop.stop());
+showWord();
 if (!SpeechRecognition) message('Speech recognition is not supported here. Try Chrome on desktop or Android.');
 else if (!window.isSecureContext) { message('Microphone access requires HTTPS or localhost.'); $('start').disabled = true; }
 render();

@@ -35,22 +35,41 @@ export function errorAction(code) {
 }
 
 export class RecognitionLoop {
-  constructor({ create, onResult, onError, onListening, schedule = setTimeout, cancel = clearTimeout }) {
+  constructor({ create, onResult, onError, onListening, schedule = (fn, delay) => setTimeout(fn, delay), cancel = timer => clearTimeout(timer) }) {
     Object.assign(this, { create, onResult, onError, onListening, schedule, cancel });
-    this.active = false; this.session = null; this.timer = null; this.failures = 0;
+    this.active = false; this.session = null; this.timer = null; this.finalizeTimer = null; this.failures = 0;
   }
   start() { if (this.active) return; this.active = true; this.failures = 0; this.open(); }
+  clearFinalizeTimer() {
+    if (this.finalizeTimer !== null) this.cancel(this.finalizeTimer);
+    this.finalizeTimer = null;
+  }
   open() {
     if (!this.active) return;
     const recognition = this.create();
     this.session = recognition;
+    let finalizing = false;
     recognition.onstart = () => { if (this.session === recognition && this.active) this.onListening(); };
     recognition.onresult = event => {
       if (this.session !== recognition || !this.active) return;
+      this.clearFinalizeTimer();
       this.failures = 0; this.onResult(event);
+      // Chrome may hold an isolated word as interim indefinitely in continuous mode.
+      // stop() asks for a final result; abort() would discard the pending speech.
+      const pending = Array.from(event.results).some(result => !result.isFinal && result[0]?.transcript?.trim());
+      if (pending && !finalizing && this.active && this.session === recognition) {
+        this.finalizeTimer = this.schedule(() => {
+          this.finalizeTimer = null;
+          if (!this.active || this.session !== recognition) return;
+          finalizing = true;
+          try { recognition.stop(); }
+          catch { this.onError('start-failed', true); this.stop(); }
+        }, 1400);
+      }
     };
     recognition.onerror = event => {
       if (this.session !== recognition || !this.active) return;
+      this.clearFinalizeTimer();
       this.failures++;
       const terminal = errorAction(event.error) === 'stop' || this.failures >= 5;
       this.onError(event.error, terminal);
@@ -58,6 +77,7 @@ export class RecognitionLoop {
     };
     recognition.onend = () => {
       if (this.session !== recognition) return;
+      this.clearFinalizeTimer();
       this.session = null;
       if (this.active) this.timer = this.schedule(() => { this.timer = null; this.open(); }, Math.min(300 * 2 ** this.failures, 4000));
     };
@@ -66,6 +86,7 @@ export class RecognitionLoop {
   }
   stop() {
     this.active = false;
+    this.clearFinalizeTimer();
     if (this.timer !== null) this.cancel(this.timer);
     this.timer = null;
     const session = this.session; this.session = null;
