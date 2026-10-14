@@ -40,9 +40,14 @@ const loop = new RecognitionLoop({
       if (outcome === 'unclear') message("Didn't catch that. Try again.");
       if (outcome === 'complete') { loop.stop(); message('Five little wins. Well done!'); $('celebration').hidden = false; }
     }
-    if (outcomes.length) {
-      const transcripts = Array.from(event.results).filter(result => result.isFinal).map(result => result[0].transcript);
-      $('heard').textContent = transcripts.length ? `Heard: “${transcripts.join(' ')}”` : 'Try a short pause between words.';
+    const changed = Array.from(event.results).slice(event.resultIndex);
+    const interim = changed.filter(result => !result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
+    const final = changed.filter(result => result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
+    if (interim) {
+      $('heard').textContent = `Hearing: “${interim}” — waiting for confirmation.`;
+      if (!outcomes.length) message('Speech detected… pause briefly after the word.');
+    } else if (outcomes.length) {
+      $('heard').textContent = final ? `Heard: “${final}”` : 'Try a short pause between words.';
     }
     render();
   },
@@ -52,9 +57,12 @@ const loop = new RecognitionLoop({
       'service-not-allowed': 'Speech recognition is unavailable. Try Chrome and check browser settings.',
       'audio-capture': 'No microphone is available. Connect a microphone and try again.',
       'language-not-supported': 'English recognition is unavailable in this browser.',
-      'start-failed': 'Could not start recognition. Check microphone access and try again.'
+      'start-failed': 'Could not start recognition. Check microphone access and try again.',
+      'network': "Didn't catch that. Try again. The browser speech service could not connect.",
+      'no-speech': "Didn't catch that. Try again. Check your selected microphone and speak after Listening appears."
     };
-    message(descriptions[code] || (terminal ? "Didn't catch that. Try again. Check your connection and press Start Recording." : "Didn't catch that. Try again."));
+    const detail = descriptions[code];
+    message(detail ? `${detail}${terminal && ['network', 'no-speech'].includes(code) ? ' Press Start Recording to retry.' : ''}` : (terminal ? "Didn't catch that. Try again. Check your connection and press Start Recording." : "Didn't catch that. Try again."));
     if (terminal) practice.stop();
     render();
   }
