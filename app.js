@@ -1,4 +1,4 @@
-import { Practice, RecognitionLoop } from './practice.js?v=5';
+import { Practice, RecognitionLoop } from './practice.js?v=6';
 const vocabulary = [ ['go','To move or travel somewhere.'], ['come','To move toward someone or somewhere.'], ['make','To create or prepare something.'], ['take','To pick up or carry something.'], ['give','To offer something to someone.'] ];
 const $ = id => document.getElementById(id);
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -16,6 +16,10 @@ function sound(positive) {
   } catch { /* Audio feedback is optional when browser audio is unavailable. */ }
 }
 function message(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
+function feedback(text, error = false) {
+  $('feedback').textContent = text;
+  $('feedback').classList.toggle('error', error);
+}
 function render() {
   $('progress').replaceChildren(...Array.from({length:5}, (_, i) => {
     const cell = document.createElement('div'); cell.className = `cell${i < practice.count ? ' success' : ''}`;
@@ -36,11 +40,16 @@ const loop = new RecognitionLoop({
   onResult(event) {
     const outcomes = practice.consume(event);
     for (const outcome of outcomes) {
-      if (outcome === 'correct') { message(loop.listening ? 'Nice work! Keep going.' : 'Nice work! One moment…'); sound(true); }
-      if (outcome === 'incorrect') { message('Try again!', true); sound(false); }
-      if (outcome === 'unclear') message("Didn't catch that. Try again.");
-      if (outcome === 'complete') { loop.stop(); message('Five little wins. Well done!'); $('celebration').hidden = false; }
+      if (outcome === 'correct') sound(true);
+      if (outcome === 'incorrect') sound(false);
     }
+    // Keep outcome feedback separate from microphone/restart status.
+    // A mixed batch must not erase an incorrect word with a later correct token.
+    if (outcomes.includes('complete')) {
+      loop.stop(); message('Practice complete.'); feedback('Five little wins. Well done!'); $('celebration').hidden = false;
+    } else if (outcomes.includes('incorrect')) feedback('Try again!', true);
+    else if (outcomes.includes('correct')) feedback('Nice work!');
+    else if (outcomes.includes('unclear')) feedback("Didn't catch that. Try again.");
     const changed = Array.from(event.results).slice(event.resultIndex);
     const interim = changed.filter(result => !result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
     const final = changed.filter(result => result.isFinal).map(result => result[0]?.transcript || '').join(' ').trim();
@@ -63,7 +72,8 @@ const loop = new RecognitionLoop({
       'no-speech': "Didn't catch that. Try again. Check your selected microphone and speak after Listening appears."
     };
     const detail = descriptions[code];
-    message(detail ? `${detail}${terminal && ['network', 'no-speech'].includes(code) ? ' Press Start Recording to retry.' : ''}` : (terminal ? "Didn't catch that. Try again. Check your connection and press Start Recording." : "Didn't catch that. Try again."));
+    feedback(detail ? `${detail}${terminal && ['network', 'no-speech'].includes(code) ? ' Press Start Recording to retry.' : ''}` : (terminal ? "Didn't catch that. Try again. Check your connection and press Start Recording." : "Didn't catch that. Try again."));
+    message(terminal ? 'Recording stopped.' : 'Reconnecting microphone…');
     if (terminal) practice.stop();
     render();
   }
@@ -71,7 +81,7 @@ const loop = new RecognitionLoop({
 $('start').onclick = () => {
   if (!SpeechRecognition) return;
   try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); audio.resume().catch(() => {}); } catch {}
-  practice.start(); message('Starting microphone…'); loop.start(); render();
+  feedback(''); practice.start(); message('Starting microphone…'); loop.start(); render();
 };
 $('stop').onclick = () => { practice.stop(); loop.stop(); message('Paused. Your progress is saved.'); render(); };
 function showWord() {
@@ -82,7 +92,7 @@ function showWord() {
 $('next').onclick = () => {
   loop.stop(); index = (index + 1) % vocabulary.length; practice = new Practice(vocabulary[index][0]);
   showWord();
-  $('celebration').hidden = true; $('heard').textContent = 'Your five wins start here.'; message('Ready when you are.'); render();
+  feedback(''); $('celebration').hidden = true; $('heard').textContent = 'Your five wins start here.'; message('Ready when you are.'); render();
 };
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && practice.active) { practice.stop(); loop.stop(); message('Paused while this tab is in the background. Press Start Recording to resume.'); render(); }

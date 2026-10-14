@@ -85,7 +85,7 @@ test('three consecutive sessions count the third repetition and restart without 
   s.onresult(event([result('go',false)]));f.tick();assert.equal(p.count,i+1);assert.equal(f.loop.listening,false);
   f.tick();
  }
- assert.deepEqual(delays.filter(d=>d===1800 || d===0),[1800,0,1800,0,1800,0]);assert.equal(waiting,6);assert.equal(f.sessions.length,4);
+ assert.deepEqual(delays.filter(d=>d===900 || d===0),[900,0,900,0,900,0]);assert.equal(waiting,6);assert.equal(f.sessions.length,4);
 });
 test('native rapid utterance confirms five words without a forced 650ms cut',()=>{
  const f=fixture();const p=new Practice('make');p.start();f.loop.onResult=e=>{p.consume(e);if(!p.active)f.loop.stop();};f.loop.start();const s=f.sessions[0];let stops=0;s.stop=()=>stops++;
@@ -112,4 +112,14 @@ test('five native sessions count third and fifth results despite index reuse',()
   assert.equal(p.count,i+1);if(i<4)f.tick();
  }
  assert.equal(f.loop.active,false);assert.equal(f.timers.size,0);assert.equal(f.sessions.length,5);
+});
+test('speech end requests confirmation promptly, but a new utterance cancels it',()=>{
+ const f=fixture();f.loop.start();const s=f.sessions[0];let stopped=0;s.stop=()=>stopped++;
+ s.onspeechstart();s.onresult(event([result('go',false)]));s.onspeechend();
+ f.tick(100);assert.equal(stopped,0);s.onspeechstart();f.tick(100);assert.equal(stopped,0);
+ s.onspeechend();f.tick(180);assert.equal(stopped,1);
+});
+test('an interim update after speech end does not restore a long confirmation delay',()=>{
+ const f=fixture();f.loop.start();const s=f.sessions[0];let stops=0;s.stop=()=>stops++;
+ s.onspeechstart();s.onspeechend();s.onresult(event([result('go',false)]));f.tick(180);assert.equal(stops,1);
 });

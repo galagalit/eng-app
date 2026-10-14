@@ -54,7 +54,7 @@ export class RecognitionLoop {
     if (!this.active) return;
     const recognition = this.create();
     this.session = recognition;
-    let finalizing = false;
+    let finalizing = false, speaking = false, speechEnded = false;
     const current = () => this.session === recognition && this.active;
     const ended = () => {
       if (this.session !== recognition) return;
@@ -89,13 +89,19 @@ export class RecognitionLoop {
     recognition.onstart = () => {
       if (current()) { this.listening = true; this.onListening(); arm(5000); }
     };
+    recognition.onspeechstart = () => {
+      if (current() && !finalizing) { speaking = true; speechEnded = false; arm(5000); }
+    };
+    recognition.onspeechend = () => {
+      if (current() && !finalizing) { speaking = false; speechEnded = true; arm(180); }
+    };
     recognition.onresult = event => {
       if (!current()) return;
       this.failures = 0; this.onResult(event);
       // Let native single-utterance endpointing confirm rapid speech first.
       // This timer is a recovery fallback, not the normal word boundary.
       const pending = Array.from(event.results).some(result => !result.isFinal && result[0]?.transcript?.trim());
-      arm(pending ? 1800 : 5000);
+      arm(pending ? (speechEnded ? 180 : speaking ? 2500 : 900) : 5000);
     };
     recognition.onerror = event => {
       if (!current()) return;
