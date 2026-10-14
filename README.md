@@ -23,6 +23,15 @@ npm test
 
 The Node tests exercise final/interim deduplication, multiple words per result, incorrect words, empty recognition, five-success completion, pause/resume, session index resets, unexpected ends, silence, permission denial, stale callbacks, network error retry limits, and start failures. They use fake recognition sessions and do not contact a speech service.
 
+An optional Chromium smoke test simulates delayed mobile speech results (no final result), five wins, restart, and error persistence. It does not test a real microphone. Start the app first, then on Linux with Chromium installed:
+
+```sh
+npm install --prefix /tmp/say-it-five-browser --cache /tmp/say-it-five-npm-cache playwright --no-audit --no-fund
+NODE_PATH=/tmp/say-it-five-browser/node_modules CHROMIUM_PATH=/usr/bin/chromium node scripts/browser-smoke.cjs
+```
+
+Set `CHROMIUM_PATH` to your installed Chromium/Chrome executable and `APP_URL` to an alternate running app URL if needed. Playwright is only an external test tool, not an app runtime dependency.
+
 Manual browser checks:
 
 1. Say the target five times with pauses; check green cells, positive sounds, completion animation, stopped microphone, and enabled Next word.
@@ -37,15 +46,8 @@ Manual browser checks:
 
 Web Speech API availability depends on browser, platform, service availability, and internet access. Desktop/Android Chrome is recommended; Safari behavior varies, and other browsers may lack support. Browser interruptions, device locks, permission revocation, and background restrictions cannot be fully controlled by app code. No-speech/network failures are not treated as pronunciation mistakes.
 
-Outcome feedback has a dedicated area and persists through automatic restarts until a new evaluated attempt, explicit Start, or next word. Recognition failures remain distinct from red incorrect-word feedback. Live interim text is displayed as “Hearing” so you can distinguish delayed confirmation from a wrong recognized word. The app uses short, single-utterance recognition sessions while practice stays active, immediately restarting after the browser ends each session. This lets the browser finalize a word or a rapid group of words naturally, rather than cutting speech every 0.65 seconds. When the browser reports speech ending, confirmation is requested after a 180 ms grace period; new speech cancels it. Without speech-boundary events, a stalled interim result is finalized after 0.9 seconds without updates (2.5 seconds when speech is still marked active); a session with no result is refreshed after 5 seconds. If stop does not produce an end event within 1.2 seconds, the old session is aborted and replaced. Pending unconfirmed speech may be lost during this recovery. There can still be a brief microphone gap during browser session restart. Error retries retain a backoff. Wait for “Listening” after “One moment” before speaking again. Only final results count. Result indexes are deduplicated per recognition session. Every returned token is evaluated; punctuation and case are ignored. The app cannot detect repetitions omitted or merged by the recognition service, nor guarantee that a recognized word means accurate pronunciation. A short pause helps. Recognition quality may vary with accent, noise, and microphone quality.
+Outcome feedback has a dedicated area. Incorrect-word feedback shows both recognized and expected words and remains visible for at least 2.5 seconds, including automatic restarts and interim updates. Completion, explicit Start, and next word clear it immediately. Recognition failures remain distinct from red incorrect-word feedback.
 
-The app does not store audio or recognized transcripts persistently. Your browser may send microphone audio to its recognition provider under that provider's privacy terms. Feedback sounds are synthesized locally with Web Audio and can be suppressed by browser/device audio policies.
+To avoid mobile browsers' slow final confirmation, a matching live transcript unchanged for 350 ms is credited. Credit is tracked per result index: identical interim/final events do not add wins; appended repetitions add only new matches. A revised hypothesis adjusts prior credit before completion. Wrong words are classified only on final results; interim guesses are not treated as pronunciation errors. A fifth stable match completes practice without waiting for final. This is a speed/accuracy tradeoff: a browser could have revised that fifth guess later, so completion is word-recognition practice, not verified pronunciation.
 
-## Files
-
-- `practice.js`: independently tested counting and recognition-session lifecycle.
-- `app.js`: browser integration, controls, audio feedback, vocabulary.
-- `index.html`, `style.css`: responsive accessible interface.
-- `server.js`: dependency-free development static server.
-
-All application assets are local; no font or analytics requests are required.
+Continuous recognition stays open while speech results arrive; speech-end recovery waits 1.2 seconds, and an interim session without updates is refreshed after 2.5 seconds. A session with no results is refreshed after 5 seconds. If stop does not produce end within 1.2 seconds, the old session is aborted and replaced. Pending speech may be lost during recovery. Some mobile browsers ignore continuous mode or provide no interim text, so final-result/network delays and brief restart gaps cannot be eliminated by this app. Repeated words omitted by the service cannot be recovered. A short pause and a quiet environment can help.

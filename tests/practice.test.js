@@ -123,3 +123,34 @@ test('an interim update after speech end does not restore a long confirmation de
  const f=fixture();f.loop.start();const s=f.sessions[0];let stops=0;s.stop=()=>stops++;
  s.onspeechstart();s.onspeechend();s.onresult(event([result('go',false)]));f.tick(180);assert.equal(stops,1);
 });
+test('stable live text counts before final, without duplicate credit',()=>{
+ const p=new Practice('go');p.start();
+ assert.deepEqual(p.consume(event([result('go',false)]),{stable:true}),['correct']);
+ assert.deepEqual(p.consume(event([result('go',false)]),{stable:true}),[]);
+ assert.deepEqual(p.consume(event([result('go')])),[]);assert.equal(p.count,1);
+});
+test('appended live repetitions count only new words and reach five without final',()=>{
+ const p=new Practice('go');p.start();
+ for(let i=1;i<=5;i++)p.consume(event([result(Array(i).fill('go').join(' '),false)]),{stable:true});
+ assert.equal(p.count,5);assert.equal(p.active,false);
+});
+test('revised hypotheses retract prior credit; interim wrong guesses are not errors',()=>{
+ const p=new Practice('go');p.start();p.consume(event([result('go go',false)]),{stable:true});assert.equal(p.count,2);
+ assert.deepEqual(p.consume(event([result('no',false)]),{stable:true}),['revised']);assert.equal(p.count,0);
+ assert.deepEqual(p.consume(event([result('no')])),['incorrect']);assert.equal(p.count,0);
+});
+test('stable matching transcript is delivered at 350ms despite duplicate interim events',()=>{
+ const f=fixture();const p=new Practice('go');p.start();f.loop.onResult=e=>p.consume(e);f.loop.onStableResult=e=>p.consume(e,{stable:true});f.loop.start();const s=f.sessions[0];
+ s.onresult(event([result('go',false)]));f.tick(200);s.onresult(event([result('go',false)]));f.tick(150);assert.equal(p.count,1);
+ s.onresult(event([result('go')]));assert.equal(p.count,1);
+});
+test('changed live text restarts stability timer and Stop cancels it',()=>{
+ const f=fixture();let stable=0;f.loop.onStableResult=()=>stable++;f.loop.start();const s=f.sessions[0];
+ s.onresult(event([result('g',false)]));f.tick(200);s.onresult(event([result('go',false)]));f.tick(200);assert.equal(stable,0);
+ f.loop.stop();f.tick(1000);assert.equal(stable,0);
+});
+test('removed interim result indexes retract their early credit',()=>{
+ const p=new Practice('go');p.start();p.consume(event([result('go',false),result('go',false)]),{stable:true});assert.equal(p.count,2);
+ p.consume(event([result('go',false)]),{stable:true});assert.equal(p.count,1);
+ p.consume(event([result('go')]));assert.equal(p.count,1);
+});
