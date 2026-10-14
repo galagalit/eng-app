@@ -11,7 +11,7 @@ cd /workspace/eng-app
 npm start
 ```
 
-On your own computer, open `http://localhost:3000` in Chrome. Allow microphone access, press **Start Recording**, and repeat the displayed word with short pauses. Recording continues until five successful repetitions or **Stop Recording**. Stopping preserves progress for the current word; refreshing the page resets it. **Next word** becomes available after completion. There are eight words, cycling back to the first.
+On your own computer, open `http://localhost:3000` in Chrome. Allow microphone access, press **Start Recording**, and repeat the displayed word with short pauses. Recording continues until five successful repetitions or **Stop Recording**. Stopping preserves progress for the current word; refreshing the page resets it. **Next word** becomes available after completion. There are five common verbs: go, come, make, take, and give, cycling back to the first.
 
 For a phone or a remotely hosted version, serve these static files over **HTTPS**. Opening an HTTP LAN address does not grant microphone access. The included Node server is a development server; it does not configure TLS. This cloud onboarding UI does not provide a localhost app preview.
 
