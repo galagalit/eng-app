@@ -68,3 +68,16 @@ test('the displayed verb go is accepted as a final result',()=>{
  assert.deepEqual(p.consume(event([result('go')])),['correct']);assert.equal(p.count,1);
  p.newSession();assert.deepEqual(p.consume(event([result('Go.')])),['correct']);assert.equal(p.count,2);
 });
+test('three consecutive sessions count the third repetition and restart without delay',()=>{
+ const f=fixture();const p=new Practice('go');p.start();const delays=[];let waiting=0;
+ const create=f.loop.create;f.loop.create=()=>{p.newSession();return create();};
+ const schedule=f.loop.schedule;f.loop.schedule=(fn,delay)=>{delays.push(delay);return schedule(fn);};
+ f.loop.onWaiting=()=>waiting++;f.loop.onResult=e=>p.consume(e);f.loop.start();
+ for(let i=0;i<3;i++){
+  const s=f.sessions[i];s.onstart();assert.equal(f.loop.listening,true);
+  s.stop=()=>{s.onresult(event([result('go')]));s.onend();};
+  s.onresult(event([result('go',false)]));f.tick();assert.equal(p.count,i+1);assert.equal(f.loop.listening,false);
+  f.tick();
+ }
+ assert.deepEqual(delays,[650,0,650,0,650,0]);assert.equal(waiting,6);assert.equal(f.sessions.length,4);
+});

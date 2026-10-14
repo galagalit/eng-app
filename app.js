@@ -1,4 +1,4 @@
-import { Practice, RecognitionLoop } from './practice.js?v=3';
+import { Practice, RecognitionLoop } from './practice.js?v=4';
 const vocabulary = [ ['go','To move or travel somewhere.'], ['come','To move toward someone or somewhere.'], ['make','To create or prepare something.'], ['take','To pick up or carry something.'], ['give','To offer something to someone.'] ];
 const $ = id => document.getElementById(id);
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -32,10 +32,11 @@ const loop = new RecognitionLoop({
     return recognition;
   },
   onListening() { message('Listening… say the word, then pause.'); },
+  onWaiting() { message('One moment… wait for Listening before the next word.'); },
   onResult(event) {
     const outcomes = practice.consume(event);
     for (const outcome of outcomes) {
-      if (outcome === 'correct') { message('Nice work! Keep going.'); sound(true); }
+      if (outcome === 'correct') { message(loop.listening ? 'Nice work! Keep going.' : 'Nice work! One moment…'); sound(true); }
       if (outcome === 'incorrect') { message('Try again!', true); sound(false); }
       if (outcome === 'unclear') message("Didn't catch that. Try again.");
       if (outcome === 'complete') { loop.stop(); message('Five little wins. Well done!'); $('celebration').hidden = false; }

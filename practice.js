@@ -35,9 +35,9 @@ export function errorAction(code) {
 }
 
 export class RecognitionLoop {
-  constructor({ create, onResult, onError, onListening, schedule = (fn, delay) => setTimeout(fn, delay), cancel = timer => clearTimeout(timer) }) {
-    Object.assign(this, { create, onResult, onError, onListening, schedule, cancel });
-    this.active = false; this.session = null; this.timer = null; this.finalizeTimer = null; this.failures = 0;
+  constructor({ create, onResult, onError, onListening, onWaiting = () => {}, schedule = (fn, delay) => setTimeout(fn, delay), cancel = timer => clearTimeout(timer) }) {
+    Object.assign(this, { create, onResult, onError, onListening, onWaiting, schedule, cancel });
+    this.active = false; this.listening = false; this.session = null; this.timer = null; this.finalizeTimer = null; this.failures = 0;
   }
   start() { if (this.active) return; this.active = true; this.failures = 0; this.open(); }
   clearFinalizeTimer() {
@@ -49,7 +49,9 @@ export class RecognitionLoop {
     const recognition = this.create();
     this.session = recognition;
     let finalizing = false;
-    recognition.onstart = () => { if (this.session === recognition && this.active) this.onListening(); };
+    recognition.onstart = () => {
+      if (this.session === recognition && this.active) { this.listening = true; this.onListening(); }
+    };
     recognition.onresult = event => {
       if (this.session !== recognition || !this.active) return;
       this.clearFinalizeTimer();
@@ -62,9 +64,11 @@ export class RecognitionLoop {
           this.finalizeTimer = null;
           if (!this.active || this.session !== recognition) return;
           finalizing = true;
+          this.listening = false;
+          this.onWaiting();
           try { recognition.stop(); }
           catch { this.onError('start-failed', true); this.stop(); }
-        }, 1400);
+        }, 650);
       }
     };
     recognition.onerror = event => {
@@ -79,13 +83,19 @@ export class RecognitionLoop {
       if (this.session !== recognition) return;
       this.clearFinalizeTimer();
       this.session = null;
-      if (this.active) this.timer = this.schedule(() => { this.timer = null; this.open(); }, Math.min(300 * 2 ** this.failures, 4000));
+      this.listening = false;
+      if (this.active) {
+        this.onWaiting();
+        const delay = this.failures ? Math.min(300 * 2 ** this.failures, 4000) : 0;
+        this.timer = this.schedule(() => { this.timer = null; this.open(); }, delay);
+      }
     };
     try { recognition.start(); }
     catch { this.onError('start-failed', true); this.stop(); }
   }
   stop() {
     this.active = false;
+    this.listening = false;
     this.clearFinalizeTimer();
     if (this.timer !== null) this.cancel(this.timer);
     this.timer = null;
